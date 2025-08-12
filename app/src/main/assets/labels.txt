@@ -1,1 +1,2 @@
-helmet
+person_no_helmet
+person_with_helmet

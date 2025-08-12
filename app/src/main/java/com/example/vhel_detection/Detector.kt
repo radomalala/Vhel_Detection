@@ -1,42 +1,83 @@
-package com.example.vhel_detection   // <- aligné avec le dossier
+package com.example.vhel_detection
 
 import android.content.Context
-import android.graphics.*
-import android.graphics.ImageFormat
-import android.util.Size
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.util.Log
+import android.widget.TextView
 import androidx.camera.core.ImageProxy
 import org.tensorflow.lite.Interpreter
-import java.io.FileInputStream
+import org.tensorflow.lite.support.common.FileUtil
+import org.tensorflow.lite.support.image.TensorImage
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.channels.FileChannel
-import java.io.ByteArrayOutputStream
 
-class Detector(private val context: Context) {
+class Detector(private val context: Context, private val debugText: TextView) {
 
-    private val tflite: Interpreter
-    private val inputSize = 320
-    private val labels = context.assets.open("labels.txt").bufferedReader().readLines()
+    private var interpreter: Interpreter
+    private val inputImageWidth: Int
+    private val inputImageHeight: Int
+    private val modelInputSize: Int
 
     init {
-        val model = loadModelFile("model.tflite")
-        tflite = Interpreter(model)
+        // Charger le modèle TFLite
+        val modelBuffer: ByteBuffer = FileUtil.loadMappedFile(context, "model.tflite")
+        interpreter = Interpreter(modelBuffer)
+
+        // Lire les dimensions d’entrée du modèle
+        val inputShape = interpreter.getInputTensor(0).shape() // [1, height, width, 3]
+        inputImageHeight = inputShape[1]
+        inputImageWidth = inputShape[2]
+        modelInputSize = 4 * inputImageWidth * inputImageHeight * 3 // float32
     }
 
     fun detect(imageProxy: ImageProxy) {
-        val bitmap = toBitmap(imageProxy)
-        val input = preprocess(bitmap)
-        val output = Array(1) { FloatArray(labels.size) }
-        tflite.run(input, output)
-        val detected = output[0][0] > 0.5f
-        drawOverlay(bitmap, detected)
+        val bitmap = imageProxy.toBitmap().rotate(imageProxy.imageInfo.rotationDegrees)
+
+        // Préparation de l'image redimensionnée
+        val tensorImage = TensorImage.fromBitmap(
+            Bitmap.createScaledBitmap(bitmap, inputImageWidth, inputImageHeight, true)
+        )
+
+        // Sortie attendue = [1, 2] (1 batch, 2 classes)
+        val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, 2), org.tensorflow.lite.DataType.FLOAT32)
+
+        // Lancer l’inférence
+        interpreter.run(tensorImage.buffer, outputBuffer.buffer.rewind())
+
+        // Récupérer scores par classes
+        val scores = outputBuffer.floatArray
+
+        // Trouver l'index de la classe la plus probable
+        val maxIndex = scores.indices.maxByOrNull { scores[it] } ?: -1
+        val confidence = if (maxIndex != -1) scores[maxIndex] else 0f
+
+        // Labels correspondants à ton label.txt
+        val labels = listOf("person_no_helmet", "person_with_helmet")
+
+        val detectedLabel = if (maxIndex != -1) labels[maxIndex] else "Inconnu"
+
+        Log.d("Detector", "Scores: ${scores.joinToString()}, Classe: $detectedLabel, Confiance: $confidence")
+
+        // Mettre à jour UI (toujours sur thread principal)
+        (context as? MainActivity)?.runOnUiThread {
+            debugText.text = when(detectedLabel) {
+                "person_with_helmet" -> "✅ Casque détecté"
+                "person_no_helmet" -> "❌ Casque non détecté"
+                else -> "❓ Détection incertaine"
+            }
+        }
+
         imageProxy.close()
     }
 
-    private fun toBitmap(image: ImageProxy): Bitmap {
-        val yBuffer = image.planes[0].buffer
-        val uBuffer = image.planes[1].buffer
-        val vBuffer = image.planes[2].buffer
+
+    // Extension pour convertir ImageProxy en Bitmap
+    private fun ImageProxy.toBitmap(): Bitmap {
+        val yBuffer = planes[0].buffer
+        val uBuffer = planes[1].buffer
+        val vBuffer = planes[2].buffer
+
         val ySize = yBuffer.remaining()
         val uSize = uBuffer.remaining()
         val vSize = vBuffer.remaining()
@@ -46,37 +87,17 @@ class Detector(private val context: Context) {
         vBuffer.get(nv21, ySize, vSize)
         uBuffer.get(nv21, ySize + vSize, uSize)
 
-        val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 100, out)
-        val yuv = out.toByteArray()
-        return BitmapFactory.decodeByteArray(yuv, 0, yuv.size)
+        val yuvImage = android.graphics.YuvImage(nv21, android.graphics.ImageFormat.NV21, width, height, null)
+        val out = java.io.ByteArrayOutputStream()
+        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, width, height), 100, out)
+        val imageBytes = out.toByteArray()
+        return android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
     }
 
-    private fun preprocess(bitmap: Bitmap): ByteBuffer {
-        val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-        val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
-        byteBuffer.order(ByteOrder.nativeOrder())
-        val intValues = IntArray(inputSize * inputSize)
-        resized.getPixels(intValues, 0, inputSize, 0, 0, inputSize, inputSize)
-        for (pixel in intValues) {
-            byteBuffer.putFloat(((pixel shr 16) and 0xFF) / 255.0f)
-            byteBuffer.putFloat(((pixel shr 8) and 0xFF) / 255.0f)
-            byteBuffer.putFloat((pixel and 0xFF) / 255.0f)
-        }
-        return byteBuffer
-    }
-
-    private fun drawOverlay(bitmap: Bitmap, detected: Boolean) {
-        // TODO : afficher sur un ImageView ou via Canvas
-    }
-
-    private fun loadModelFile(modelName: String): ByteBuffer {
-        val fileDescriptor = context.assets.openFd(modelName)
-        val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-        val fileChannel = inputStream.channel
-        val startOffset = fileDescriptor.startOffset
-        val declaredLength = fileDescriptor.declaredLength
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+    // Extension pour rotation
+    private fun Bitmap.rotate(degrees: Int): Bitmap {
+        val matrix = Matrix()
+        matrix.postRotate(degrees.toFloat())
+        return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
     }
 }
