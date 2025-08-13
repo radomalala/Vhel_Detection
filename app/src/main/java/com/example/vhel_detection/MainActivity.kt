@@ -3,16 +3,22 @@ package com.example.vhel_detection
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.ImageFormat
+import android.graphics.YuvImage
 import android.os.Bundle
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -29,6 +35,8 @@ class MainActivity : ComponentActivity() {
 
         previewView = findViewById(R.id.previewView)
         debugText = findViewById(R.id.debugText)
+        debugText.text = "Camera ready!"
+        debugText.setTextColor(Color.WHITE)
 
         detector = Detector(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
@@ -46,6 +54,7 @@ class MainActivity : ComponentActivity() {
                 startCamera()
             } else {
                 debugText.text = "Permission caméra refusée"
+                debugText.setTextColor(Color.RED)
             }
         }
 
@@ -55,8 +64,9 @@ class MainActivity : ComponentActivity() {
 
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
         cameraProviderFuture.addListener({
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+            val cameraProvider = cameraProviderFuture.get()
 
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
@@ -65,15 +75,13 @@ class MainActivity : ComponentActivity() {
             val imageAnalyzer = ImageAnalysis.Builder().build().also {
                 it.setAnalyzer(cameraExecutor) { imageProxy ->
                     val bitmap = imageProxy.toBitmap()
-                    val label = detector.detect(bitmap)
-
+                    val result = detector.detect(bitmap)
                     runOnUiThread {
-                        debugText.text = label
+                        debugText.text = result
                         debugText.setTextColor(
-                            if (label == "person_with_helmet") 0xFF00FF00.toInt() else 0xFFFF0000.toInt()
+                            if (result == "person_with_helmet") Color.GREEN else Color.RED
                         )
                     }
-
                     imageProxy.close()
                 }
             }
@@ -88,6 +96,7 @@ class MainActivity : ComponentActivity() {
                 )
             } catch (exc: Exception) {
                 debugText.text = "Erreur caméra : ${exc.message}"
+                debugText.setTextColor(Color.RED)
             }
 
         }, ContextCompat.getMainExecutor(this))
@@ -101,12 +110,6 @@ class MainActivity : ComponentActivity() {
 }
 
 // Extension pour convertir ImageProxy en Bitmap
-import androidx.camera.core.ImageProxy
-import android.graphics.BitmapFactory
-import android.graphics.ImageFormat
-import android.graphics.YuvImage
-import java.io.ByteArrayOutputStream
-
 fun ImageProxy.toBitmap(): Bitmap {
     val yBuffer = planes[0].buffer
     val uBuffer = planes[1].buffer

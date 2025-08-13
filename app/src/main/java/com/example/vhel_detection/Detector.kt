@@ -12,55 +12,51 @@ class Detector(context: Context) {
 
     init {
         // Charger le modèle TFLite depuis assets
-        val modelBytes = context.assets.open("model.tflite").use { it.readBytes() }
-        val buffer = ByteBuffer.allocateDirect(modelBytes.size).apply {
-            order(ByteOrder.nativeOrder())
-            put(modelBytes)
-            rewind()
+        val model = context.assets.open("model.tflite").use { inputStream ->
+            val bytes = inputStream.readBytes()
+            ByteBuffer.allocateDirect(bytes.size).apply {
+                order(ByteOrder.nativeOrder())
+                put(bytes)
+                rewind()
+            }
         }
-        interpreter = Interpreter(buffer)
+        interpreter = Interpreter(model)
     }
 
-    // Labels du modèle
-    private val labels = listOf("person_no_helmet", "person_with_helmet")
-
-    // Retourne directement le label le plus probable
     fun detect(bitmap: Bitmap): String {
         val input = preprocess(bitmap)
+
+        // Sortie attendue [1, 6, 8400]
         val output = Array(1) { Array(6) { FloatArray(8400) } }
 
         interpreter.run(input, output)
 
-        // Post-traitement simple : on prend la première "classe" ayant le score max
-        var maxScore = -Float.MAX_VALUE
-        var maxClass = 0
-        for (i in 0 until 6) {
-            for (j in 0 until 8400) {
-                val score = output[0][i][j]
-                if (score > maxScore) {
-                    maxScore = score
-                    maxClass = i % 2  // 0=no helmet, 1=with helmet
-                }
-            }
-        }
-        return labels[maxClass]
+        // Exemple simple : max sur les 6 classes
+        val scores = output[0].map { it.maxOrNull() ?: 0f }
+        val maxIndex = scores.indexOf(scores.maxOrNull() ?: 0f)
+
+        return if (maxIndex == 0) "person_no_helmet" else "person_with_helmet"
     }
 
     private fun preprocess(bitmap: Bitmap): ByteBuffer {
-        val inputBitmap = Bitmap.createScaledBitmap(bitmap, 640, 640, true)
-        val buffer = ByteBuffer.allocateDirect(4 * 640 * 640 * 3).apply {
+        val inputImage = Bitmap.createScaledBitmap(bitmap, 640, 640, true)
+        val inputBuffer = ByteBuffer.allocateDirect(4 * 640 * 640 * 3).apply {
             order(ByteOrder.nativeOrder())
         }
-
         val pixels = IntArray(640 * 640)
-        inputBitmap.getPixels(pixels, 0, 640, 0, 0, 640, 640)
+        inputImage.getPixels(pixels, 0, 640, 0, 0, 640, 640)
+
         for (pixel in pixels) {
-            putFloat(((pixel shr 16) and 0xFF) / 255f)
-            putFloat(((pixel shr 8) and 0xFF) / 255f)
-            putFloat((pixel and 0xFF) / 255f)
+            val r = ((pixel shr 16) and 0xFF) / 255f
+            val g = ((pixel shr 8) and 0xFF) / 255f
+            val b = (pixel and 0xFF) / 255f
+            inputBuffer.putFloat(r)
+            inputBuffer.putFloat(g)
+            inputBuffer.putFloat(b)
         }
-        buffer.rewind()
-        return buffer
+
+        inputBuffer.rewind()
+        return inputBuffer
     }
 
     fun close() {
