@@ -2,6 +2,7 @@ package com.example.vhel_detection
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -57,21 +58,25 @@ class MainActivity : ComponentActivity() {
         cameraProviderFuture.addListener({
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
-            val preview = Preview.Builder()
-                .build()
-                .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
 
-            val imageAnalyzer = ImageAnalysis.Builder()
-                .build()
-                .also {
-                    it.setAnalyzer(cameraExecutor) { imageProxy ->
-                        // Pour test rapide, juste afficher un message
-                        runOnUiThread {
-                            debugText.text = "Camera ready!"
-                        }
-                        imageProxy.close()
+            val imageAnalyzer = ImageAnalysis.Builder().build().also {
+                it.setAnalyzer(cameraExecutor) { imageProxy ->
+                    val bitmap = imageProxy.toBitmap()
+                    val label = detector.detect(bitmap)
+
+                    runOnUiThread {
+                        debugText.text = label
+                        debugText.setTextColor(
+                            if (label == "person_with_helmet") 0xFF00FF00.toInt() else 0xFFFF0000.toInt()
+                        )
                     }
+
+                    imageProxy.close()
                 }
+            }
 
             try {
                 cameraProvider.unbindAll()
@@ -93,4 +98,32 @@ class MainActivity : ComponentActivity() {
         cameraExecutor.shutdown()
         detector.close()
     }
+}
+
+// Extension pour convertir ImageProxy en Bitmap
+import androidx.camera.core.ImageProxy
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.YuvImage
+import java.io.ByteArrayOutputStream
+
+fun ImageProxy.toBitmap(): Bitmap {
+    val yBuffer = planes[0].buffer
+    val uBuffer = planes[1].buffer
+    val vBuffer = planes[2].buffer
+
+    val ySize = yBuffer.remaining()
+    val uSize = uBuffer.remaining()
+    val vSize = vBuffer.remaining()
+
+    val nv21 = ByteArray(ySize + uSize + vSize)
+    yBuffer.get(nv21, 0, ySize)
+    vBuffer.get(nv21, ySize, vSize)
+    uBuffer.get(nv21, ySize + vSize, uSize)
+
+    val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
+    val out = ByteArrayOutputStream()
+    yuvImage.compressToJpeg(android.graphics.Rect(0, 0, width, height), 100, out)
+    val imageBytes = out.toByteArray()
+    return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
 }
