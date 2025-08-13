@@ -7,24 +7,45 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 
-class OverlayView(context: Context, attrs: AttributeSet): View(context, attrs) {
+data class Detection(
+    val label: String,
+    val score: Float,
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float
+)
+
+class OverlayView @JvmOverloads constructor(
+    context: Context, attrs: AttributeSet? = null
+) : View(context, attrs) {
+
+    private val boxPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 6f
+    }
+
+    private val textPaint = Paint().apply {
+        color = Color.WHITE
+        textSize = 40f
+        style = Paint.Style.FILL
+    }
 
     private var detections: List<Detection> = emptyList()
-    private val paint = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 4f
+
+    fun setDetections(detections: List<Detection>) {
+        this.detections = detections
+        invalidate() // redraw
     }
 
-    fun setDetections(dets: List<Detection>) {
-        detections = dets
-        invalidate()
-    }
-
+    // ✅ Corrigé : canvas n'est plus nullable
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        for (d in detections) {
-            paint.color = if (d.label == "person_with_helmet") Color.GREEN else Color.RED
-            canvas.drawRect(d.box, paint)
+
+        for (det in detections) {
+            boxPaint.color = if (det.label == "person_with_helmet") Color.GREEN else Color.RED
+            canvas.drawRect(det.left, det.top, det.right, det.bottom, boxPaint)
+            canvas.drawText("${det.label} ${(det.score * 100).toInt()}%", det.left, det.top - 10f, textPaint)
         }
     }
 }
