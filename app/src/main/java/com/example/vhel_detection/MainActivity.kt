@@ -14,6 +14,8 @@ import androidx.core.content.ContextCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+private val Unit.isNotEmpty: Boolean
+
 class MainActivity : ComponentActivity() {
 
     private lateinit var previewView: PreviewView
@@ -64,7 +66,7 @@ class MainActivity : ComponentActivity() {
                         val detections = detector.detectImageProxy(image)
                         runOnUiThread {
                             overlay.setDetections(detections)
-                            debugText.text = if (detections.isNotEmpty()) "Person detected" else "No person"
+                            debugText.text = if (detections.isNotEmpty) "Person detected" else "No person"
                         }
                         image.close()
                     }
@@ -90,3 +92,5 @@ class MainActivity : ComponentActivity() {
         detector.close()
     }
 }
+
+private fun Detector.detectImageProxy(image: ImageProxy) {}

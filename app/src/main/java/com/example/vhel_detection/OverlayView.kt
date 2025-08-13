@@ -24,7 +24,7 @@ class OverlayView @JvmOverloads constructor(
 
     private var detections: List<Detection> = emptyList()
 
-    fun setDetections(detections: List<Detection>) {
+    fun setDetections(detections: Unit) {
         this.detections = detections
         invalidate()
     }
