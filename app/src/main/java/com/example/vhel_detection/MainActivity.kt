@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
         debugText = findViewById(R.id.debugText)
         overlay = findViewById(R.id.overlayView)
 
-        detector = Detector(this) // CPU version
+        detector = Detector(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         if (allPermissionsGranted()) startCamera()
@@ -51,7 +51,6 @@ class MainActivity : ComponentActivity() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
-
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
             }
@@ -62,11 +61,10 @@ class MainActivity : ComponentActivity() {
                 .build()
                 .also { analyzer ->
                     analyzer.setAnalyzer(cameraExecutor) { image ->
-                        val detections = detector.detectImageProxy(image) // retourne bounding boxes
+                        val detections = detector.detectImageProxy(image)
                         runOnUiThread {
                             overlay.setDetections(detections)
-                            debugText.text =
-                                if (detections.isNotEmpty()) "Person detected" else "No person"
+                            debugText.text = if (detections.isNotEmpty()) "Person detected" else "No person"
                         }
                         image.close()
                     }

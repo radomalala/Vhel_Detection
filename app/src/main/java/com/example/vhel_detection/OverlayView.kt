@@ -7,15 +7,6 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 
-data class Detection(
-    val label: String,
-    val score: Float,
-    val left: Float,
-    val top: Float,
-    val right: Float,
-    val bottom: Float
-)
-
 class OverlayView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
@@ -35,13 +26,11 @@ class OverlayView @JvmOverloads constructor(
 
     fun setDetections(detections: List<Detection>) {
         this.detections = detections
-        invalidate() // redraw
+        invalidate()
     }
 
-    // ✅ Corrigé : canvas n'est plus nullable
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-
         for (det in detections) {
             boxPaint.color = if (det.label == "person_with_helmet") Color.GREEN else Color.RED
             canvas.drawRect(det.left, det.top, det.right, det.bottom, boxPaint)
