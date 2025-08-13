@@ -7,14 +7,14 @@ import android.util.Size
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.*
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-
-private val Unit.isNotEmpty: Boolean
 
 class MainActivity : ComponentActivity() {
 
@@ -36,39 +36,42 @@ class MainActivity : ComponentActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         if (allPermissionsGranted()) startCamera()
-        else requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+        else permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    private val requestPermissionLauncher =
+    private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) startCamera()
-            else debugText.text = "Permission caméra refusée"
+            if (granted) startCamera() else debugText.text = "Permission caméra refusée"
         }
 
-    private fun allPermissionsGranted() =
-        ContextCompat.checkSelfPermission(baseContext, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED
+    private fun allPermissionsGranted(): Boolean =
+        ContextCompat.checkSelfPermission(
+            baseContext, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
 
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
 
-            val imageAnalyzer = ImageAnalysis.Builder()
-                .setTargetResolution(Size(640, 640))
+            val preview = Preview.Builder()
+                .build()
+                .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+
+            val analyzer = ImageAnalysis.Builder()
+                .setTargetResolution(Size(640, 640)) // rapide et aligne au modèle
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
-                .also { analyzer ->
-                    analyzer.setAnalyzer(cameraExecutor) { image ->
-                        val detections = detector.detectImageProxy(image)
+                .also { imageAnalysis ->
+                    imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                        val detections = detector.detectImageProxy(imageProxy)
                         runOnUiThread {
                             overlay.setDetections(detections)
-                            debugText.text = if (detections.isNotEmpty) "Person detected" else "No person"
+                            debugText.text =
+                                if (detections.any { it.label.startsWith("person") }) "Person detected"
+                                else "No person"
                         }
-                        image.close()
+                        imageProxy.close()
                     }
                 }
 
@@ -78,10 +81,10 @@ class MainActivity : ComponentActivity() {
                     this,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     preview,
-                    imageAnalyzer
+                    analyzer
                 )
             } catch (e: Exception) {
-                debugText.text = "Erreur caméra: ${e.message}"
+                debugText.text = "Erreur caméra : ${e.message}"
             }
         }, ContextCompat.getMainExecutor(this))
     }
@@ -92,5 +95,3 @@ class MainActivity : ComponentActivity() {
         detector.close()
     }
 }
-
-private fun Detector.detectImageProxy(image: ImageProxy) {}

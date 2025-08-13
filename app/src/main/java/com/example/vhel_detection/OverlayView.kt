@@ -14,27 +14,33 @@ class OverlayView @JvmOverloads constructor(
     private val boxPaint = Paint().apply {
         style = Paint.Style.STROKE
         strokeWidth = 6f
+        isAntiAlias = true
     }
 
     private val textPaint = Paint().apply {
         color = Color.WHITE
         textSize = 40f
         style = Paint.Style.FILL
+        isAntiAlias = true
     }
 
     private var detections: List<Detection> = emptyList()
 
-    fun setDetections(detections: Unit) {
-        this.detections = detections
+    fun setDetections(dets: List<Detection>) {
+        detections = dets
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        for (det in detections) {
-            boxPaint.color = if (det.label == "person_with_helmet") Color.GREEN else Color.RED
-            canvas.drawRect(det.left, det.top, det.right, det.bottom, boxPaint)
-            canvas.drawText("${det.label} ${(det.score * 100).toInt()}%", det.left, det.top - 10f, textPaint)
+        for (d in detections) {
+            // Couleur selon le label
+            boxPaint.color = if (d.label == "person_with_helmet") Color.GREEN else Color.RED
+            // Rectangle
+            canvas.drawRect(d.left, d.top, d.right, d.bottom, boxPaint)
+            // Label + score
+            val txt = "${d.label} ${(d.score * 100).toInt()}%"
+            canvas.drawText(txt, d.left + 8f, d.top - 12f, textPaint)
         }
     }
 }
